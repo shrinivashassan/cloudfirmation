@@ -1,0 +1,1866 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "A sample VPC template",
+
+  "Parameters": {
+    "VPCName": {
+      "Description": "Name of the VPC being created",
+      "Type": "String",
+      "Default": "myvpc",
+      "MinLength": "3",
+      "MaxLength": "254",
+      "ConstraintDescription": "Name must be between 3 and 255 characters"
+    },
+    "VPCDescription": {
+      "Description": "Description of VPC",
+      "Type": "String",
+      "Default": "A sample VPC",
+      "MinLength": "3",
+      "MaxLength": "254",
+      "ConstraintDescription": "Description must be between 3 and 255 characters"
+    },
+    "PeeringVPCId": {
+      "Description": "ID of the peering VPC",
+      "Type": "AWS::EC2::VPC::Id",
+      "ConstraintDescription": "Must be a valid VPC ID"
+    },
+    "BastionHostIP": {
+      "Description": "IP Address of the Bastion Host (like will be used for SSH)",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})",
+      "ConstraintDescription": "Must be a valid IP address"
+    },
+    "PublicPort": {
+      "Description": "Port for world-facing traffic in your Public Subnet",
+      "Type": "Number",
+      "Default": 443
+    },
+    "ApplicationPort": {
+      "Description": "Port for application traffic in your Application Subnet",
+      "Type": "Number",
+      "Default": 80
+    },
+    "DataPort": {
+      "Description": "Port for database traffic in your Data Subnet",
+      "Type": "Number",
+      "Default": 5432
+    }
+  },
+
+  "Mappings": {
+    "SubnetConfig": {
+      "VPC": {"CIDR": "10.0.0.0/16"},
+      "Public": {
+        "Subnets": [
+          "10.0.1.0/24",
+          "10.0.2.0/24",
+          "10.0.3.0/24",
+          "10.0.4.0/24"
+        ]
+      },
+      "Application": {
+        "Subnets": [
+          "10.0.32.0/20",
+          "10.0.64.0/20",
+          "10.0.96.0/20",
+          "10.0.128.0/20"
+        ]
+      },
+      "Data": {
+        "Subnets": [
+          "10.0.224.0/23",
+          "10.0.226.0/23",
+          "10.0.228.0/23",
+          "10.0.230.0/23"
+        ]
+      }
+    }
+  },
+
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": {
+          "Fn::FindInMap": ["SubnetConfig", "VPC", "CIDR"]
+        },
+        "Tags": [
+          {"Key": "Name", "Value": {"Ref": "VPCName"}},
+          {"Key": "Description", "Value": {"Ref": "VPCDescription"}}
+        ]
+      }
+    },
+
+    "VPCPeeringConnection": {
+      "Type": "AWS::EC2::VPCPeeringConnection",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "PeerVpcId": {"Ref": "PeeringVPCId"},
+        "Tags": [
+          {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "VPCName"}, "prx"]]}},
+          {"Key": "Description", "Value": {"Fn::Join": [" ", ["Peering connection from", {"Ref": "PeeringVPCId"}]]}}
+        ]
+      }
+    },
+
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "Tags": [
+          {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "VPCName"}, "ig"]]}},
+          {"Key": "Description", "Value": {"Fn::Join": [" ", ["Internet Gateway for", {"Ref": "VPCName"}]]}}
+        ]
+      }
+    },
+    "VPCGatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "DependsOn": [
+        "InternetGateway"
+      ],
+      "Properties": {
+        "InternetGatewayId": {"Ref": "InternetGateway"},
+        "VpcId": {"Ref": "VPC"}
+      }
+    },
+
+    "PublicSubnet0": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [0, {"Fn::FindInMap": ["SubnetConfig", "Public", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "public-subnet",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Public Subnet in zone",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PublicSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [1, {"Fn::FindInMap": ["SubnetConfig", "Public", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "public-subnet",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Public Subnet in zone",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PublicSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [2, {"Fn::FindInMap": ["SubnetConfig", "Public", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "public-subnet",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Public Subnet in zone",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PublicSubnet3": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [3, {"Fn::FindInMap": ["SubnetConfig", "Public", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "public-subnet",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Public Subnet in zone",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "ApplicationSubnet0": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [0, {"Fn::FindInMap": ["SubnetConfig", "Application", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "application-subnet",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Application Subnet in zone",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ApplicationSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [1, {"Fn::FindInMap": ["SubnetConfig", "Application", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "application-subnet",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Application Subnet in zone",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ApplicationSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [2, {"Fn::FindInMap": ["SubnetConfig", "Application", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "application-subnet",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Application Subnet in zone",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ApplicationSubnet3": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [3, {"Fn::FindInMap": ["SubnetConfig", "Application", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "application-subnet",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Application Subnet in zone",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "DataSubnet0": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [0, {"Fn::FindInMap": ["SubnetConfig", "Data", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "data-subnet",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Data Subnet in zone",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "DataSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [1, {"Fn::FindInMap": ["SubnetConfig", "Data", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "data-subnet",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Data Subnet in zone",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "DataSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [2, {"Fn::FindInMap": ["SubnetConfig", "Data", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "data-subnet",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Data Subnet in zone",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "DataSubnet3": {
+      "Type": "AWS::EC2::Subnet",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": {
+          "Fn::Select": [3, {"Fn::FindInMap": ["SubnetConfig", "Data", "Subnets"]}]
+        },
+        "AvailabilityZone": {
+          "Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "data-subnet",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Data Subnet in zone",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]},
+                  "for",
+                  {"Ref": "VPCName"}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "PublicRoutingTable0": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-public",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Public Routing Table in",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PublicRoutingTable1": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-public",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Public Routing Table in",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PublicRoutingTable2": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-public",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Public Routing Table in",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PublicRoutingTable3": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-public",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Public Routing Table in",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "ApplicationRoutingTable0": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-application",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Application Routing Table in",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ApplicationRoutingTable1": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-application",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Application Routing Table in",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ApplicationRoutingTable2": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-application",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Application Routing Table in",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ApplicationRoutingTable3": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-application",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Application Routing Table in",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "DataRoutingTable0": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-data",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Data Routing Table in",
+                  {"Fn::Select": [0, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "DataRoutingTable1": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-data",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Data Routing Table in",
+                  {"Fn::Select": [1, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "DataRoutingTable2": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-data",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Data Routing Table in",
+                  {"Fn::Select": [2, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "DataRoutingTable3": {
+      "Type": "AWS::EC2::RouteTable",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {"Ref": "VPCName"},
+                  "rt-data",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Description",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "Data Routing Table in",
+                  {"Fn::Select": [3, {"Fn::GetAZs": {"Ref": "AWS::Region"}}]}
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "S3Endpoint": {
+      "Type": "AWS::EC2::VPCEndpoint",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "ServiceName": {"Fn::Join": ["", [ "com.amazonaws.", {"Ref": "AWS::Region"}, ".s3"]]},
+        "VpcId": {"Ref": "VPC"},
+        "RouteTableIds": [
+          {"Ref": "PublicRoutingTable0"},
+          {"Ref": "PublicRoutingTable1"},
+          {"Ref": "PublicRoutingTable2"},
+          {"Ref": "PublicRoutingTable3"},
+          {"Ref": "ApplicationRoutingTable0"},
+          {"Ref": "ApplicationRoutingTable1"},
+          {"Ref": "ApplicationRoutingTable2"},
+          {"Ref": "ApplicationRoutingTable3"},
+          {"Ref": "DataRoutingTable0"},
+          {"Ref": "DataRoutingTable1"},
+          {"Ref": "DataRoutingTable2"},
+          {"Ref": "DataRoutingTable3"}
+        ]
+      }
+    },
+
+    "AssociateRouteTableToPublicSubnet0": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "PublicSubnet0",
+        "PublicRoutingTable0"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "PublicSubnet0"},
+        "RouteTableId": {"Ref": "PublicRoutingTable0"}
+      }
+    },
+    "AssociateRouteTableToPublicSubnet1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "PublicSubnet1",
+        "PublicRoutingTable1"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "PublicSubnet1"},
+        "RouteTableId": {"Ref": "PublicRoutingTable1"}
+      }
+    },
+    "AssociateRouteTableToPublicSubnet2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "PublicSubnet2",
+        "PublicRoutingTable2"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "PublicSubnet2"},
+        "RouteTableId": {"Ref": "PublicRoutingTable2"}
+      }
+    },
+    "AssociateRouteTableToPublicSubnet3": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "PublicSubnet3",
+        "PublicRoutingTable3"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "PublicSubnet3"},
+        "RouteTableId": {"Ref": "PublicRoutingTable3"}
+      }
+    },
+
+    "AssociateRouteTableToApplicationSubnet0": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "ApplicationSubnet0",
+        "ApplicationRoutingTable0"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "ApplicationSubnet0"},
+        "RouteTableId": {"Ref": "ApplicationRoutingTable0"}
+      }
+    },
+    "AssociateRouteTableToApplicationSubnet1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "ApplicationSubnet1",
+        "ApplicationRoutingTable1"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "ApplicationSubnet1"},
+        "RouteTableId": {"Ref": "ApplicationRoutingTable1"}
+      }
+    },
+    "AssociateRouteTableToApplicationSubnet2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "ApplicationSubnet2",
+        "ApplicationRoutingTable2"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "ApplicationSubnet2"},
+        "RouteTableId": {"Ref": "ApplicationRoutingTable2"}
+      }
+    },
+    "AssociateRouteTableToApplicationSubnet3": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "ApplicationSubnet3",
+        "ApplicationRoutingTable3"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "ApplicationSubnet3"},
+        "RouteTableId": {"Ref": "ApplicationRoutingTable3"}
+      }
+    },
+
+    "AssociateRouteTableToDataSubnet0": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "DataSubnet0",
+        "DataRoutingTable0"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "DataSubnet0"},
+        "RouteTableId": {"Ref": "DataRoutingTable0"}
+      }
+    },
+    "AssociateRouteTableToDataSubnet1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "DataSubnet1",
+        "DataRoutingTable1"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "DataSubnet1"},
+        "RouteTableId": {"Ref": "DataRoutingTable1"}
+      }
+    },
+    "AssociateRouteTableToDataSubnet2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "DataSubnet2",
+        "DataRoutingTable2"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "DataSubnet2"},
+        "RouteTableId": {"Ref": "DataRoutingTable2"}
+      }
+    },
+    "AssociateRouteTableToDataSubnet3": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "DependsOn": [
+        "DataSubnet3",
+        "DataRoutingTable3"
+      ],
+      "Properties": {
+        "SubnetId": {"Ref": "DataSubnet3"},
+        "RouteTableId": {"Ref": "DataRoutingTable3"}
+      }
+    },
+
+    "ElasticIPZone0": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {"Domain": "vpc"}
+    },
+    "ElasticIPZone1": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {"Domain": "vpc"}
+    },
+    "ElasticIPZone2": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {"Domain": "vpc"}
+    },
+    "ElasticIPZone3": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {"Domain": "vpc"}
+    },
+
+    "NATGatewayZone0": {
+      "Type": "AWS::EC2::NatGateway",
+      "DependsOn": [
+        "VPCGatewayAttachment"
+      ],
+      "Properties": {
+        "AllocationId": {"Fn::GetAtt": ["ElasticIPZone0", "AllocationId"]},
+        "SubnetId": {"Ref": "PublicSubnet0"}
+      }
+    },
+    "NATGatewayZone1": {
+      "Type": "AWS::EC2::NatGateway",
+      "DependsOn": [
+        "VPCGatewayAttachment"
+      ],
+      "Properties": {
+        "AllocationId": {"Fn::GetAtt": ["ElasticIPZone1", "AllocationId"]},
+        "SubnetId": {"Ref": "PublicSubnet1"}
+      }
+    },
+    "NATGatewayZone2": {
+      "Type": "AWS::EC2::NatGateway",
+      "DependsOn": [
+        "VPCGatewayAttachment"
+      ],
+      "Properties": {
+        "AllocationId": {"Fn::GetAtt": ["ElasticIPZone2", "AllocationId"]},
+        "SubnetId": {"Ref": "PublicSubnet2"}
+      }
+    },
+    "NATGatewayZone3": {
+      "Type": "AWS::EC2::NatGateway",
+      "DependsOn": [
+        "VPCGatewayAttachment"
+      ],
+      "Properties": {
+        "AllocationId": {"Fn::GetAtt": ["ElasticIPZone3", "AllocationId"]},
+        "SubnetId": {"Ref": "PublicSubnet3"}
+      }
+    },
+
+    "RoutePublicSubnetToNatGateway0": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "PublicRoutingTable0",
+        "AssociateRouteTableToPublicSubnet0"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "PublicRoutingTable0"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone0"}
+      }
+    },
+    "RoutePublicSubnetToNatGateway1": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "PublicRoutingTable1",
+        "AssociateRouteTableToPublicSubnet1"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "PublicRoutingTable1"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone1"}
+      }
+    },
+    "RoutePublicSubnetToNatGateway2": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "PublicRoutingTable2",
+        "AssociateRouteTableToPublicSubnet2"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "PublicRoutingTable2"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone2"}
+      }
+    },
+    "RoutePublicSubnetToNatGateway3": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "PublicRoutingTable3",
+        "AssociateRouteTableToPublicSubnet3"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "PublicRoutingTable3"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone3"}
+      }
+    },
+
+    "RouteApplicationSubnetToNatGateway0": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "ApplicationRoutingTable0",
+        "AssociateRouteTableToApplicationSubnet0"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "ApplicationRoutingTable0"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone0"}
+      }
+    },
+    "RouteApplicationSubnetToNatGateway1": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "ApplicationRoutingTable1",
+        "AssociateRouteTableToApplicationSubnet1"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "ApplicationRoutingTable1"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone1"}
+      }
+    },
+    "RouteApplicationSubnetToNatGateway2": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "ApplicationRoutingTable2",
+        "AssociateRouteTableToApplicationSubnet2"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "ApplicationRoutingTable2"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone2"}
+      }
+    },
+    "RouteApplicationSubnetToNatGateway3": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "ApplicationRoutingTable3",
+        "AssociateRouteTableToApplicationSubnet3"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "ApplicationRoutingTable3"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone3"}
+      }
+    },
+
+    "RouteDataSubnetToNatGateway0": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "DataRoutingTable0",
+        "AssociateRouteTableToDataSubnet0"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "DataRoutingTable0"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone0"}
+      }
+    },
+    "RouteDataSubnetToNatGateway1": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "DataRoutingTable1",
+        "AssociateRouteTableToDataSubnet1"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "DataRoutingTable1"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone1"}
+      }
+    },
+    "RouteDataSubnetToNatGateway2": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "DataRoutingTable2",
+        "AssociateRouteTableToDataSubnet2"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "DataRoutingTable2"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone2"}
+      }
+    },
+    "RouteDataSubnetToNatGateway3": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [
+        "DataRoutingTable3",
+        "AssociateRouteTableToDataSubnet3"
+      ],
+      "Properties": {
+        "RouteTableId": {"Ref": "DataRoutingTable3"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {"Ref": "NATGatewayZone3"}
+      }
+    },
+
+
+    "NACLWorldToPublic": {
+      "Type": "AWS::EC2::NetworkAcl",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "VPCName"}, "nacl-world-public"]]}}
+        ]
+      }
+    },
+    "AssociateNACLToPublicSubnet0": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+         "PublicSubnet0",
+         "NACLWorldToPublic"
+      ],
+      "Properties": {"SubnetId": { "Ref": "PublicSubnet0" }, "NetworkAclId": { "Ref": "NACLWorldToPublic" }}
+    },
+    "AssociateNACLToPublicSubnet1": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+         "PublicSubnet1",
+         "NACLWorldToPublic"
+      ],
+      "Properties": {"SubnetId": { "Ref": "PublicSubnet1" }, "NetworkAclId": { "Ref": "NACLWorldToPublic" }}
+    },
+    "AssociateNACLToPublicSubnet2": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+         "PublicSubnet2",
+         "NACLWorldToPublic"
+      ],
+      "Properties": {"SubnetId": { "Ref": "PublicSubnet2" }, "NetworkAclId": { "Ref": "NACLWorldToPublic" }}
+    },
+    "AssociateNACLToPublicSubnet3": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+         "PublicSubnet3",
+         "NACLWorldToPublic"
+      ],
+      "Properties": {"SubnetId": { "Ref": "PublicSubnet3" }, "NetworkAclId": { "Ref": "NACLWorldToPublic" }}
+    },
+    "NACLWorldToPublicAllowAllOutbound": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToPublicSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "NetworkAclId": {"Ref": "NACLWorldToPublic"},
+        "Egress": true,
+        "Protocol": -1,
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NACLWorldToPublicInboundSSH": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToPublicSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": {"Ref": "BastionHostIP"},
+        "NetworkAclId": {"Ref": "NACLWorldToPublic"},
+        "PortRange": {
+          "From": 22,
+          "To": 22
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NACLWorldToPublicRestrictInbound": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToPublicSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "NetworkAclId": {"Ref": "NACLWorldToPublic"},
+        "PortRange": {
+          "From": {"Ref": "PublicPort"},
+          "To": {"Ref": "PublicPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 200
+      }
+    },
+
+    "NACLPublicToApplication": {
+      "Type": "AWS::EC2::NetworkAcl",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "VPCName"}, "nacl-public-application"]]}}
+        ]
+      }
+    },
+    "AssociateNACLToApplicationSubnet0": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+        "ApplicationSubnet0",
+        "NACLPublicToApplication"
+      ],
+      "Properties": {"SubnetId": { "Ref": "ApplicationSubnet0" }, "NetworkAclId": { "Ref": "NACLPublicToApplication" }}
+    },
+    "AssociateNACLToApplicationSubnet1": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+        "ApplicationSubnet1",
+        "NACLPublicToApplication"
+      ],
+      "Properties": {"SubnetId": { "Ref": "ApplicationSubnet1" }, "NetworkAclId": { "Ref": "NACLPublicToApplication" }}
+    },
+    "AssociateNACLToApplicationSubnet2": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+        "ApplicationSubnet2",
+        "NACLPublicToApplication"
+      ],
+      "Properties": {"SubnetId": { "Ref": "ApplicationSubnet2" }, "NetworkAclId": { "Ref": "NACLPublicToApplication" }}
+    },
+    "AssociateNACLToApplicationSubnet3": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+        "ApplicationSubnet3",
+        "NACLPublicToApplication"
+      ],
+      "Properties": {"SubnetId": { "Ref": "ApplicationSubnet3" }, "NetworkAclId": { "Ref": "NACLPublicToApplication" }}
+    },
+    "NACLPublicToApplicationAllowAllOutbound": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToApplicationSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "NetworkAclId": {"Ref": "NACLPublicToApplication"},
+        "Egress": true,
+        "Protocol": -1,
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NACLPublicToApplicationInboundSSH": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToApplicationSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": {"Ref": "BastionHostIP"},
+        "NetworkAclId": {"Ref": "NACLPublicToApplication"},
+        "PortRange": {
+          "From": 22,
+          "To": 22
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NACLPublicToApplicationRestrictInbound0": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToApplicationSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": {"Fn::Select": [0, {"Fn::FindInMap": ["SubnetConfig", "Public", "Subnets"]}]},
+        "NetworkAclId": {"Ref": "NACLPublicToApplication"},
+        "PortRange": {
+          "From": {"Ref": "ApplicationPort"},
+          "To": {"Ref": "ApplicationPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 200
+      }
+    },
+    "NACLPublicToApplicationRestrictInbound1": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToApplicationSubnet1"
+      ],
+      "Properties": {
+        "CidrBlock": {"Fn::Select": [1, {"Fn::FindInMap": ["SubnetConfig", "Public", "Subnets"]}]},
+        "NetworkAclId": {"Ref": "NACLPublicToApplication"},
+        "PortRange": {
+          "From": {"Ref": "ApplicationPort"},
+          "To": {"Ref": "ApplicationPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 300
+      }
+    },
+    "NACLPublicToApplicationRestrictInbound2": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToApplicationSubnet2"
+      ],
+      "Properties": {
+        "CidrBlock": {"Fn::Select": [2, {"Fn::FindInMap": ["SubnetConfig", "Public", "Subnets"]}]},
+        "NetworkAclId": {"Ref": "NACLPublicToApplication"},
+        "PortRange": {
+          "From": {"Ref": "ApplicationPort"},
+          "To": {"Ref": "ApplicationPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 400
+      }
+    },
+    "NACLPublicToApplicationRestrictInbound3": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToApplicationSubnet3"
+      ],
+      "Properties": {
+        "CidrBlock": {"Fn::Select": [3, {"Fn::FindInMap": ["SubnetConfig", "Public", "Subnets"]}]},
+        "NetworkAclId": {"Ref": "NACLPublicToApplication"},
+        "PortRange": {
+          "From": {"Ref": "ApplicationPort"},
+          "To": {"Ref": "ApplicationPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 500
+      }
+    },
+
+    "NACLApplicationToData": {
+      "Type": "AWS::EC2::NetworkAcl",
+      "DependsOn": [
+        "VPC"
+      ],
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "VPCName"}, "nacl-application-data"]]}}
+        ]
+      }
+    },
+    "AssociateNACLToDataSubnet0": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+        "DataSubnet0",
+        "NACLApplicationToData"
+      ],
+      "Properties": {"SubnetId": { "Ref": "DataSubnet0" }, "NetworkAclId": { "Ref": "NACLApplicationToData" }}
+    },
+    "AssociateNACLToDataSubnet1": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+        "DataSubnet1",
+        "NACLApplicationToData"
+      ],
+      "Properties": {"SubnetId": { "Ref": "DataSubnet1" }, "NetworkAclId": { "Ref": "NACLApplicationToData" }}
+    },
+    "AssociateNACLToDataSubnet2": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+        "DataSubnet2",
+        "NACLApplicationToData"
+      ],
+      "Properties": {"SubnetId": { "Ref": "DataSubnet2" }, "NetworkAclId": { "Ref": "NACLApplicationToData" }}
+    },
+    "AssociateNACLToDataSubnet3": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "DependsOn": [
+        "DataSubnet3",
+        "NACLApplicationToData"
+      ],
+      "Properties": {"SubnetId": { "Ref": "DataSubnet3" }, "NetworkAclId": { "Ref": "NACLApplicationToData" }}
+    },
+    "NACLApplicationToDataAllowAllOutbound": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToDataSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "NetworkAclId": {"Ref": "NACLApplicationToData"},
+        "Egress": true,
+        "Protocol": -1,
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NACLApplicationToDataInboundSSH": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToDataSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": {"Ref": "BastionHostIP"},
+        "NetworkAclId": {"Ref": "NACLApplicationToData"},
+        "PortRange": {
+          "From": 22,
+          "To": 22
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NACLApplicationToDataRestrictInbound0": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToDataSubnet0"
+      ],
+      "Properties": {
+        "CidrBlock": {"Fn::Select": [0, {"Fn::FindInMap": ["SubnetConfig", "Application", "Subnets"]}]},
+        "NetworkAclId": {"Ref": "NACLApplicationToData"},
+        "PortRange": {
+          "From": {"Ref": "DataPort"},
+          "To": {"Ref": "DataPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 200
+      }
+    },
+    "NACLApplicationToDataRestrictInbound1": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToDataSubnet1"
+      ],
+      "Properties": {
+        "CidrBlock": {"Fn::Select": [1, {"Fn::FindInMap": ["SubnetConfig", "Application", "Subnets"]}]},
+        "NetworkAclId": {"Ref": "NACLApplicationToData"},
+        "PortRange": {
+          "From": {"Ref": "DataPort"},
+          "To": {"Ref": "DataPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 300
+      }
+    },
+    "NACLApplicationToDataRestrictInbound2": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToDataSubnet2"
+      ],
+      "Properties": {
+        "CidrBlock": {"Fn::Select": [2, {"Fn::FindInMap": ["SubnetConfig", "Application", "Subnets"]}]},
+        "NetworkAclId": {"Ref": "NACLApplicationToData"},
+        "PortRange": {
+          "From": {"Ref": "DataPort"},
+          "To": {"Ref": "DataPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 400
+      }
+    },
+    "NACLApplicationToDataRestrictInbound3": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "DependsOn": [
+        "AssociateNACLToDataSubnet3"
+      ],
+      "Properties": {
+        "CidrBlock": {"Fn::Select": [3, {"Fn::FindInMap": ["SubnetConfig", "Application", "Subnets"]}]},
+        "NetworkAclId": {"Ref": "NACLApplicationToData"},
+        "PortRange": {
+          "From": {"Ref": "DataPort"},
+          "To": {"Ref": "DataPort"}
+        },
+        "Protocol": 6,
+        "RuleAction": "allow",
+        "RuleNumber": 500
+      }
+    }
+  },
+
+  "Outputs": {
+    "VpcId" : {
+      "Description": "The VPC ID",
+      "Value": {"Ref": "VPC"}
+    }
+  }
+}
